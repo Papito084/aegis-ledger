@@ -7,7 +7,13 @@
   <img src="https://img.shields.io/badge/FastAPI-0.110%2B-009688?style=for-the-badge&logo=fastapi" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Tests-21%2F21%20Passing%20(100%25)-success?style=for-the-badge&logo=pytest" alt="Tests 100%" />
   <img src="https://img.shields.io/badge/Observability-Prometheus%20Metrics-E6522C?style=for-the-badge&logo=prometheus" alt="Prometheus" />
+  <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 18" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-3-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
+  <img src="https://img.shields.io/badge/Nginx-1.25-009639?style=for-the-badge&logo=nginx&logoColor=white" alt="Nginx" />
 </p>
+
+![AegisLedger Dashboard Preview](docs/assets/dashboard_preview.png)
 
 ---
 
@@ -30,7 +36,9 @@
 
 ```mermaid
 flowchart TD
-    Client["Client / API Gateway"] -->|"POST /api/v1/transactions (Idempotency-Key)"| API["FastAPI Engine (appuser, multi-stage)"]
+    User["Usuario"] -->|"HTTPS"| SPA["React SPA (Port 3000)"]
+    SPA -->|"Reverse Proxy"| Nginx["Nginx Reverse Proxy"]
+    Nginx -->|"POST /api/v1/transactions (Idempotency-Key)"| API["FastAPI Core (Port 8000)"]
     
     subgraph Idempotency_Control ["Distributed Idempotency Layer"]
         API <-->|"Check & Acquire Lock (TTL 30s)"| RedisIdem[("Redis 7 Cache")]
@@ -98,7 +106,11 @@ Exposed at `GET /metrics` in standard OpenMetrics / Prometheus exposition format
 
 ### Single-Command Production Launch
 ```bash
-docker compose up -d --build
+docker compose up -d
+
+- **Backend (FastAPI Core):** http://localhost:8000
+- **Institutional Web Dashboard (React SPA):** http://localhost:3000
+ --build
 ```
 
 Verify service health:
@@ -218,3 +230,11 @@ tests/test_outbox_and_audit.py::TestImmutableReversalsAndAudit::test_reversal_an
 ## 8. License & Standards Compliance
 
 Conforms to international financial ledger double-entry bookkeeping standards (GAAP / IFRS general ledger structure), PCI-DSS audit immutability guidelines, and ISO 20022 message payload modeling.
+
+
+### 🖥️ Institutional Web Dashboard
+The full-stack platform includes a high-performance React SPA served via Nginx:
+- **Wallets:** Real-time balance visualization and account management.
+- **New Transfer:** Double-entry bookkeeping simulation ensuring zero-sum invariants.
+- **Cryptographic Audit Explorer:** Interactive view of the tamper-evident SHA-256 hash chain verifying ledger integrity.
+- **Journal Seats:** Historical transaction log with Immutable Reversions (Storno) functionality.
