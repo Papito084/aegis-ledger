@@ -18,6 +18,7 @@ from app.core.exceptions import (
     InsufficientFundsError,
     UnbalancedTransactionError,
 )
+from app.models.outbox import OutboxEvent, OutboxStatus
 from app.services.account_service import AccountService
 
 
@@ -80,6 +81,7 @@ class LedgerService:
         idempotency_key: str,
         description: str,
         entries_data: list[dict],
+        event_type: str = "TRANSACTION_POSTED",
     ) -> Transaction:
         """
         Executes a double-entry transaction posting with strict audit chain and idempotency.
@@ -125,12 +127,14 @@ class LedgerService:
 
         # 3. Instantiate Transaction & Entries
         tx = Transaction(
+            id=uuid.uuid4(),
             idempotency_key=idempotency_key,
             description=description,
             status=TransactionStatus.PENDING,
             prev_hash=settings.GENESIS_HASH,
             current_hash="pending",
         )
+
 
         for item in entries_data:
             direction = (
@@ -161,5 +165,32 @@ class LedgerService:
 
         # 7. Persist within the current serializable transaction
         session.add(tx)
+
+        # 8. Transactional Outbox Event (Atomic with transaction persistence)
+        outbox_event = OutboxEvent(
+            event_type=event_type,
+            aggregate_type="TRANSACTION",
+            aggregate_id=tx.id,
+            payload={
+                "transaction_id": str(tx.id),
+                "idempotency_key": tx.idempotency_key,
+                "description": tx.description,
+                "status": tx.status.value,
+                "posted_at": tx.posted_at.isoformat() if tx.posted_at else None,
+                "prev_hash": tx.prev_hash,
+                "current_hash": tx.current_hash,
+                "entries": [
+                    {
+                        "account_id": str(e.account_id),
+                        "direction": e.direction.value,
+                        "amount": e.amount,
+                    }
+                    for e in tx.entries
+                ],
+            },
+            status=OutboxStatus.PENDING,
+        )
+        session.add(outbox_event)
+
         await session.flush()
         return tx

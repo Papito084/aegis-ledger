@@ -12,6 +12,7 @@ from app.models.transaction import (
     InsufficientFundsError,
 )
 from app.models.idempotency import IdempotencyRecord, IdempotencyStatus
+from app.models.outbox import OutboxEvent, OutboxStatus
 
 __all__ = [
     "Account",
@@ -23,6 +24,8 @@ __all__ = [
     "EntryDirection",
     "IdempotencyRecord",
     "IdempotencyStatus",
+    "OutboxEvent",
+    "OutboxStatus",
     "LedgerDomainError",
     "UnbalancedTransactionError",
     "InvalidEntryAmountError",

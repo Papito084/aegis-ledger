@@ -8,8 +8,10 @@ from app.api.v1.router import api_router
 from app.core.exceptions import (
     LedgerDomainError,
     AccountNotFoundError,
+    TransactionNotFoundError,
     ConcurrentTransactionConflictError,
 )
+from app.services.outbox_relay import OutboxRelay
 
 
 @asynccontextmanager
@@ -17,8 +19,16 @@ async def lifespan(app: FastAPI):
     # Startup: ensure tables are created (in development/tests)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Initialize and start OutboxRelay background worker
+    outbox_relay = OutboxRelay()
+    outbox_relay.start()
+    app.state.outbox_relay = outbox_relay
+
     yield
-    # Shutdown: dispose pool
+
+    # Shutdown: cleanly stop OutboxRelay and dispose engine
+    await outbox_relay.stop()
     await engine.dispose()
 
 
@@ -58,6 +68,18 @@ async def account_not_found_handler(request: Request, exc: AccountNotFoundError)
             "detail": str(exc),
         },
     )
+
+
+@app.exception_handler(TransactionNotFoundError)
+async def transaction_not_found_handler(request: Request, exc: TransactionNotFoundError):
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error_type": "TransactionNotFoundError",
+            "detail": str(exc),
+        },
+    )
+
 
 
 @app.exception_handler(LedgerDomainError)

@@ -28,6 +28,11 @@ class AccountNotFoundError(LedgerDomainError):
     pass
 
 
+class TransactionNotFoundError(LedgerDomainError):
+    """Raised when a referenced transaction does not exist."""
+    pass
+
+
 class InactiveAccountError(LedgerDomainError):
     """Raised when trying to post an entry to a frozen or closed account."""
     pass

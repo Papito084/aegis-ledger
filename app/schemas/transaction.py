@@ -38,3 +38,15 @@ class TransactionResponse(BaseModel):
     current_hash: str
     created_at: datetime
     entries: list[EntryResponse]
+
+
+class TransactionReversalRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=500, description="Mandatory audit explanation for reversing the transaction")
+
+
+class AuditReportResponse(BaseModel):
+    is_valid: bool
+    total_transactions_verified: int
+    broken_link_at: Optional[uuid.UUID] = None
+    details: str
+

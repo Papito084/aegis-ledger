@@ -9,6 +9,8 @@ from app.schemas.transaction import (
     EntryResponse,
     TransactionCreate,
     TransactionResponse,
+    TransactionReversalRequest,
+    AuditReportResponse,
 )
 
 __all__ = [
@@ -19,4 +21,6 @@ __all__ = [
     "EntryResponse",
     "TransactionCreate",
     "TransactionResponse",
+    "TransactionReversalRequest",
+    "AuditReportResponse",
 ]
