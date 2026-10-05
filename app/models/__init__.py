@@ -9,6 +9,7 @@ from app.models.transaction import (
     UnbalancedTransactionError,
     InvalidEntryAmountError,
     InsufficientEntriesError,
+    InsufficientFundsError,
 )
 from app.models.idempotency import IdempotencyRecord, IdempotencyStatus
 
@@ -26,4 +27,5 @@ __all__ = [
     "UnbalancedTransactionError",
     "InvalidEntryAmountError",
     "InsufficientEntriesError",
+    "InsufficientFundsError",
 ]

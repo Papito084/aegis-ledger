@@ -159,6 +159,8 @@ class TestDoubleEntryIntegration:
             {"account_id": ap_acc.id, "direction": EntryDirection.CREDIT, "amount": 10000},
         ]
 
+        expected_prev_hash = await LedgerService.get_latest_transaction_hash(db_session)
+
         tx1 = await LedgerService.record_transaction(
             session=db_session,
             idempotency_key="idemp-tx-1",
@@ -168,7 +170,7 @@ class TestDoubleEntryIntegration:
 
         assert tx1.status == TransactionStatus.POSTED
         assert tx1.net_balance == 0
-        assert tx1.prev_hash == "0" * 64
+        assert tx1.prev_hash == expected_prev_hash
         assert len(tx1.current_hash) == 64
 
         # Second transaction (chained to tx1.current_hash)

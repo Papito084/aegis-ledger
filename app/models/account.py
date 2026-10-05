@@ -1,7 +1,7 @@
 import enum
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, Enum as SAEnum
+from sqlalchemy import String, DateTime, Boolean, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
@@ -38,6 +38,11 @@ class Account(Base):
     status: Mapped[AccountStatus] = mapped_column(
         SAEnum(AccountStatus, native_enum=False, length=20),
         default=AccountStatus.ACTIVE,
+        nullable=False,
+    )
+    allow_overdraft: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(

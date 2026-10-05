@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.account import Account, AccountType, AccountStatus
@@ -9,23 +9,16 @@ from app.models.transaction import (
     Entry,
     EntryDirection,
     TransactionStatus,
-    LedgerDomainError,
 )
-
-
-class AccountNotFoundError(LedgerDomainError):
-    """Raised when an referenced account does not exist."""
-    pass
-
-
-class InactiveAccountError(LedgerDomainError):
-    """Raised when trying to post an entry to a frozen or closed account."""
-    pass
-
-
-class CurrencyMismatchError(LedgerDomainError):
-    """Raised when accounts in a single transaction have mismatched currencies."""
-    pass
+from app.core.exceptions import (
+    LedgerDomainError,
+    AccountNotFoundError,
+    InactiveAccountError,
+    CurrencyMismatchError,
+    InsufficientFundsError,
+    UnbalancedTransactionError,
+)
+from app.services.account_service import AccountService
 
 
 class LedgerService:
@@ -40,6 +33,7 @@ class LedgerService:
         name: str,
         currency: str,
         account_type: AccountType,
+        allow_overdraft: bool = False,
     ) -> Account:
         """Creates a new financial account."""
         account = Account(
@@ -47,6 +41,7 @@ class LedgerService:
             currency=currency.upper(),
             type=account_type,
             status=AccountStatus.ACTIVE,
+            allow_overdraft=allow_overdraft,
         )
         session.add(account)
         await session.flush()
@@ -95,7 +90,12 @@ class LedgerService:
             ...
         ]
         """
-        # 1. Idempotency Check
+        # 1. Linear cryptographic audit chain sequencing
+        # Acquire transaction-level advisory lock immediately to serialize audit ledger execution
+        # and prevent concurrent branch forks and SSI pivot collisions
+        await session.execute(select(func.pg_advisory_xact_lock(424242)))
+
+        # 2. Idempotency Check
         stmt = select(Transaction).where(Transaction.idempotency_key == idempotency_key)
         existing = (await session.execute(stmt)).scalar_one_or_none()
         if existing:
@@ -139,7 +139,6 @@ class LedgerService:
                 else EntryDirection(item["direction"])
             )
             entry = Entry(
-                transaction=tx,
                 account_id=item["account_id"],
                 direction=direction,
                 amount=int(item["amount"]),
@@ -149,11 +148,18 @@ class LedgerService:
         # 4. Invariant Validation (Debits == Credits, positive amounts, min 2 legs)
         tx.validate_invariants()
 
-        # 5. Fetch previous hash & Seal cryptographic block
+        # 5. Overdraft / Sufficient Funds Validation
+        await AccountService.validate_sufficient_funds_for_entries(
+            session=session,
+            account_map=account_map,
+            entries=tx.entries,
+        )
+
+        # 6. Fetch previous hash & Seal cryptographic block
         prev_hash = await LedgerService.get_latest_transaction_hash(session)
         tx.seal_and_post(prev_hash=prev_hash)
 
-        # 6. Persist within the current serializable transaction
+        # 7. Persist within the current serializable transaction
         session.add(tx)
         await session.flush()
         return tx

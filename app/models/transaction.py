@@ -16,26 +16,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
-
-
-class LedgerDomainError(Exception):
-    """Base exception for all domain invariant violations in Aegis Ledger."""
-    pass
-
-
-class UnbalancedTransactionError(LedgerDomainError):
-    """Raised when sum(Debits) != sum(Credits)."""
-    pass
-
-
-class InvalidEntryAmountError(LedgerDomainError):
-    """Raised when an entry amount is <= 0 or not an exact integer."""
-    pass
-
-
-class InsufficientEntriesError(LedgerDomainError):
-    """Raised when a transaction does not contain at least two entries."""
-    pass
+from app.core.exceptions import (
+    LedgerDomainError,
+    UnbalancedTransactionError,
+    InvalidEntryAmountError,
+    InsufficientEntriesError,
+    InsufficientFundsError,
+)
 
 
 class TransactionStatus(str, enum.Enum):

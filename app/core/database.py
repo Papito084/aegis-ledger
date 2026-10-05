@@ -13,15 +13,29 @@ class Base(DeclarativeBase):
     pass
 
 
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
+
+poolclass = NullPool if settings.ENVIRONMENT in ("development", "test", "testing") else AsyncAdaptedQueuePool
+
+engine_kwargs = {
+    "echo": settings.DEBUG,
+    "isolation_level": "SERIALIZABLE",
+}
+
+if poolclass == NullPool:
+    engine_kwargs["poolclass"] = NullPool
+else:
+    engine_kwargs.update({
+        "pool_size": settings.DB_POOL_SIZE,
+        "max_overflow": settings.DB_MAX_OVERFLOW,
+        "pool_timeout": settings.DB_POOL_TIMEOUT,
+        "pool_pre_ping": True,
+    })
+
 # PostgreSQL engine configured with strict SERIALIZABLE isolation level for ledger operations
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    isolation_level="SERIALIZABLE",
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_timeout=settings.DB_POOL_TIMEOUT,
-    pool_pre_ping=True,
+    **engine_kwargs,
 )
 
 async_session_factory = async_sessionmaker(

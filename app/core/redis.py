@@ -2,16 +2,13 @@ from collections.abc import AsyncGenerator
 import redis.asyncio as aioredis
 from app.core.config import settings
 
-redis_pool = aioredis.ConnectionPool.from_url(
-    settings.REDIS_URL,
-    decode_responses=True,
-    max_connections=50,
-)
-
 
 def get_redis_client() -> aioredis.Redis:
-    """Return an async Redis client backed by connection pooling."""
-    return aioredis.Redis(connection_pool=redis_pool)
+    """Return an async Redis client safely bound to the active event loop."""
+    return aioredis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+    )
 
 
 async def get_redis() -> AsyncGenerator[aioredis.Redis, None]:

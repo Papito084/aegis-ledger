@@ -5,7 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
 from app.api.v1.router import api_router
-from app.models.transaction import LedgerDomainError
+from app.core.exceptions import (
+    LedgerDomainError,
+    AccountNotFoundError,
+    ConcurrentTransactionConflictError,
+)
 
 
 @asynccontextmanager
@@ -32,6 +36,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(ConcurrentTransactionConflictError)
+async def concurrency_conflict_handler(request: Request, exc: ConcurrentTransactionConflictError):
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "error_type": "ConcurrentTransactionConflictError",
+            "detail": str(exc),
+        },
+    )
+
+
+@app.exception_handler(AccountNotFoundError)
+async def account_not_found_handler(request: Request, exc: AccountNotFoundError):
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={
+            "error_type": "AccountNotFoundError",
+            "detail": str(exc),
+        },
+    )
 
 
 @app.exception_handler(LedgerDomainError)
