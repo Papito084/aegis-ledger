@@ -69,6 +69,20 @@ services:
     networks:
       - aegis_network
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aegis_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - aegis-api
+    networks:
+      - aegis_network
+
+
 
 volumes:
   postgres_data:

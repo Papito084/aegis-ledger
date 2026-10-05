@@ -57,3 +57,37 @@ async def get_account_balance(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         )
+
+
+@router.get(
+    "",
+    response_model=list[dict],
+    status_code=status.HTTP_200_OK,
+    summary="List all accounts with calculated balances",
+)
+async def list_accounts(
+    db: AsyncSession = Depends(get_db_session),
+):
+    from sqlalchemy import select
+    from app.models.account import Account
+
+    stmt = select(Account).order_by(Account.created_at.asc())
+    accounts = (await db.execute(stmt)).scalars().all()
+
+    result = []
+    for acc in accounts:
+        balance_summary = await AccountService.get_account_balance(db, acc.id)
+        result.append({
+            "id": str(acc.id),
+            "name": acc.name,
+            "currency": acc.currency,
+            "type": acc.type.value if hasattr(acc.type, "value") else str(acc.type),
+            "status": acc.status.value if hasattr(acc.status, "value") else str(acc.status),
+            "allow_overdraft": acc.allow_overdraft,
+            "created_at": acc.created_at.isoformat(),
+            "balance": balance_summary.balance,
+            "total_debit": balance_summary.total_debit,
+            "total_credit": balance_summary.total_credit,
+        })
+    return result
+

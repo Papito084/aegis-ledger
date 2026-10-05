@@ -119,3 +119,29 @@ async def reverse_transaction(
             content=payload,
         )
 
+
+@router.get(
+    "",
+    response_model=list[TransactionResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List transactions with entries and cryptographic hashes",
+)
+async def list_transactions(
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db_session),
+):
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.models.transaction import Transaction
+
+    stmt = (
+        select(Transaction)
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
+        .limit(limit)
+        .options(selectinload(Transaction.entries))
+    )
+    result = await db.execute(stmt)
+    transactions = result.scalars().all()
+    return transactions
+
+
