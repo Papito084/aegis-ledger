@@ -1,5 +1,7 @@
+import time
 import uuid
 from typing import Optional
+
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -92,105 +94,130 @@ class LedgerService:
             ...
         ]
         """
-        # 1. Linear cryptographic audit chain sequencing
-        # Acquire transaction-level advisory lock immediately to serialize audit ledger execution
-        # and prevent concurrent branch forks and SSI pivot collisions
-        await session.execute(select(func.pg_advisory_xact_lock(424242)))
+        start_time = time.perf_counter()
+        tx_type = "REVERSAL" if event_type == "TRANSACTION_REVERSED" else "REGULAR"
 
-        # 2. Idempotency Check
-        stmt = select(Transaction).where(Transaction.idempotency_key == idempotency_key)
-        existing = (await session.execute(stmt)).scalar_one_or_none()
-        if existing:
-            return existing
+        try:
+            # 1. Linear cryptographic audit chain sequencing
+            # Acquire transaction-level advisory lock immediately to serialize audit ledger execution
+            # and prevent concurrent branch forks and SSI pivot collisions
+            await session.execute(select(func.pg_advisory_xact_lock(424242)))
 
-        # 2. Account verification and currency validation
-        account_ids = {item["account_id"] for item in entries_data}
-        accounts_stmt = select(Account).where(Account.id.in_(account_ids))
-        accounts_res = (await session.execute(accounts_stmt)).scalars().all()
-        account_map = {acc.id: acc for acc in accounts_res}
+            # 2. Idempotency Check
+            stmt = select(Transaction).where(Transaction.idempotency_key == idempotency_key)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+            if existing:
+                return existing
 
-        if len(account_map) != len(account_ids):
-            missing_ids = account_ids - set(account_map.keys())
-            raise AccountNotFoundError(f"Accounts not found: {missing_ids}")
+            # 3. Account verification and currency validation
+            account_ids = {item["account_id"] for item in entries_data}
+            accounts_stmt = select(Account).where(Account.id.in_(account_ids))
+            accounts_res = (await session.execute(accounts_stmt)).scalars().all()
+            account_map = {acc.id: acc for acc in accounts_res}
 
-        currencies = {acc.currency for acc in account_map.values()}
-        if len(currencies) > 1:
-            raise CurrencyMismatchError(
-                f"Multi-currency transactions in single seat not permitted: {currencies}"
-            )
+            if len(account_map) != len(account_ids):
+                missing_ids = account_ids - set(account_map.keys())
+                raise AccountNotFoundError(f"Accounts not found: {missing_ids}")
 
-        for acc in account_map.values():
-            if not acc.is_operational():
-                raise InactiveAccountError(
-                    f"Account {acc.id} ({acc.name}) is {acc.status}, transactions forbidden."
+            currencies = {acc.currency for acc in account_map.values()}
+            if len(currencies) > 1:
+                raise CurrencyMismatchError(
+                    f"Multi-currency transactions in single seat not permitted: {currencies}"
                 )
 
-        # 3. Instantiate Transaction & Entries
-        tx = Transaction(
-            id=uuid.uuid4(),
-            idempotency_key=idempotency_key,
-            description=description,
-            status=TransactionStatus.PENDING,
-            prev_hash=settings.GENESIS_HASH,
-            current_hash="pending",
-        )
+            for acc in account_map.values():
+                if not acc.is_operational():
+                    raise InactiveAccountError(
+                        f"Account {acc.id} ({acc.name}) is {acc.status}, transactions forbidden."
+                    )
 
-
-        for item in entries_data:
-            direction = (
-                item["direction"]
-                if isinstance(item["direction"], EntryDirection)
-                else EntryDirection(item["direction"])
+            # 4. Instantiate Transaction & Entries
+            tx = Transaction(
+                id=uuid.uuid4(),
+                idempotency_key=idempotency_key,
+                description=description,
+                status=TransactionStatus.PENDING,
+                prev_hash=settings.GENESIS_HASH,
+                current_hash="pending",
             )
-            entry = Entry(
-                account_id=item["account_id"],
-                direction=direction,
-                amount=int(item["amount"]),
+
+            for item in entries_data:
+                direction = (
+                    item["direction"]
+                    if isinstance(item["direction"], EntryDirection)
+                    else EntryDirection(item["direction"])
+                )
+                entry = Entry(
+                    account_id=item["account_id"],
+                    direction=direction,
+                    amount=int(item["amount"]),
+                )
+                tx.entries.append(entry)
+
+            # 5. Invariant Validation (Debits == Credits, positive amounts, min 2 legs)
+            tx.validate_invariants()
+
+            # 6. Overdraft / Sufficient Funds Validation
+            await AccountService.validate_sufficient_funds_for_entries(
+                session=session,
+                account_map=account_map,
+                entries=tx.entries,
             )
-            tx.entries.append(entry)
 
-        # 4. Invariant Validation (Debits == Credits, positive amounts, min 2 legs)
-        tx.validate_invariants()
+            # 7. Fetch previous hash & Seal cryptographic block
+            prev_hash = await LedgerService.get_latest_transaction_hash(session)
+            tx.seal_and_post(prev_hash=prev_hash)
 
-        # 5. Overdraft / Sufficient Funds Validation
-        await AccountService.validate_sufficient_funds_for_entries(
-            session=session,
-            account_map=account_map,
-            entries=tx.entries,
-        )
+            # 8. Persist within the current serializable transaction
+            session.add(tx)
 
-        # 6. Fetch previous hash & Seal cryptographic block
-        prev_hash = await LedgerService.get_latest_transaction_hash(session)
-        tx.seal_and_post(prev_hash=prev_hash)
+            # 9. Transactional Outbox Event (Atomic with transaction persistence)
+            outbox_event = OutboxEvent(
+                event_type=event_type,
+                aggregate_type="TRANSACTION",
+                aggregate_id=tx.id,
+                payload={
+                    "transaction_id": str(tx.id),
+                    "idempotency_key": tx.idempotency_key,
+                    "description": tx.description,
+                    "status": tx.status.value,
+                    "posted_at": tx.posted_at.isoformat() if tx.posted_at else None,
+                    "prev_hash": tx.prev_hash,
+                    "current_hash": tx.current_hash,
+                    "entries": [
+                        {
+                            "account_id": str(e.account_id),
+                            "direction": e.direction.value,
+                            "amount": e.amount,
+                        }
+                        for e in tx.entries
+                    ],
+                },
+                status=OutboxStatus.PENDING,
+            )
+            session.add(outbox_event)
 
-        # 7. Persist within the current serializable transaction
-        session.add(tx)
+            await session.flush()
 
-        # 8. Transactional Outbox Event (Atomic with transaction persistence)
-        outbox_event = OutboxEvent(
-            event_type=event_type,
-            aggregate_type="TRANSACTION",
-            aggregate_id=tx.id,
-            payload={
-                "transaction_id": str(tx.id),
-                "idempotency_key": tx.idempotency_key,
-                "description": tx.description,
-                "status": tx.status.value,
-                "posted_at": tx.posted_at.isoformat() if tx.posted_at else None,
-                "prev_hash": tx.prev_hash,
-                "current_hash": tx.current_hash,
-                "entries": [
-                    {
-                        "account_id": str(e.account_id),
-                        "direction": e.direction.value,
-                        "amount": e.amount,
-                    }
-                    for e in tx.entries
-                ],
-            },
-            status=OutboxStatus.PENDING,
-        )
-        session.add(outbox_event)
+            try:
+                from app.core.metrics import LEDGER_TRANSACTIONS_TOTAL
+                LEDGER_TRANSACTIONS_TOTAL.labels(status="POSTED", type=tx_type).inc()
+            except Exception:
+                pass
 
-        await session.flush()
-        return tx
+            return tx
+        except Exception:
+            try:
+                from app.core.metrics import LEDGER_TRANSACTIONS_TOTAL
+                LEDGER_TRANSACTIONS_TOTAL.labels(status="FAILED", type=tx_type).inc()
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                from app.core.metrics import LEDGER_TRANSACTION_DURATION_SECONDS
+                duration = time.perf_counter() - start_time
+                LEDGER_TRANSACTION_DURATION_SECONDS.observe(duration)
+            except Exception:
+                pass
+

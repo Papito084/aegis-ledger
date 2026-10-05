@@ -21,6 +21,24 @@ async def test_health_endpoint(async_client: AsyncClient):
     assert data["database"] == "healthy"
     assert data["redis"] == "healthy"
 
+    # Test root health probe
+    root_health = await async_client.get("/health")
+    assert root_health.status_code == 200
+    assert root_health.json()["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint(async_client: AsyncClient):
+    response = await async_client.get("/metrics")
+    assert response.status_code == 200
+    text = response.text
+    assert "ledger_transactions_total" in text
+    assert "ledger_transaction_duration_seconds" in text
+    assert "ledger_serialization_retries_total" in text
+    assert "ledger_idempotency_hits_total" in text
+    assert "ledger_outbox_queue_depth" in text
+
+
 
 @pytest.mark.asyncio
 async def test_account_creation_and_balance_query(async_client: AsyncClient):

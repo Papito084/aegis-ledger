@@ -62,8 +62,19 @@ class OutboxRelay:
                 result = await session.execute(stmt)
                 events = result.scalars().all()
 
+                # Update outbox queue depth metric
+                try:
+                    from app.core.metrics import LEDGER_OUTBOX_QUEUE_DEPTH
+                    from sqlalchemy import func
+                    depth_stmt = select(func.count()).select_from(OutboxEvent).where(OutboxEvent.status == OutboxStatus.PENDING)
+                    depth_res = (await session.execute(depth_stmt)).scalar() or 0
+                    LEDGER_OUTBOX_QUEUE_DEPTH.set(depth_res)
+                except Exception:
+                    pass
+
                 if not events:
                     return 0
+
 
                 for event in events:
                     try:

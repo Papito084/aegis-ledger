@@ -46,6 +46,30 @@ services:
     networks:
       - aegis_network
 
+  aegis-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - POSTGRES_SERVER=postgres
+      - DATABASE_URL=postgresql+asyncpg://aegis_user:aegis_password@postgres:5432/aegis_db
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=False
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis_network
+
+
 volumes:
   postgres_data:
     driver: local

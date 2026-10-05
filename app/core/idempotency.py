@@ -120,8 +120,14 @@ class DistributedIdempotencyManager:
         """
         is_new, cached_payload = await self.acquire(key)
         if not is_new:
+            try:
+                from app.core.metrics import LEDGER_IDEMPOTENCY_HITS_TOTAL
+                LEDGER_IDEMPOTENCY_HITS_TOTAL.inc()
+            except Exception:
+                pass
             yield IdempotencyResult(is_cached=True, payload=cached_payload)
             return
+
 
         handle = IdempotencyHandle(self, key)
         try:

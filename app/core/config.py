@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "aegis_db"
-    DATABASE_URL_OVERRIDE: Optional[str] = None
+    DATABASE_URL: Optional[str] = None
 
     # Connection pooling
     DB_POOL_SIZE: int = 20
@@ -37,15 +37,13 @@ class Settings(BaseSettings):
     DEFAULT_CURRENCY: str = "EUR"
     GENESIS_HASH: str = "0" * 64
 
-    @computed_field
-    @property
-    def DATABASE_URL(self) -> str:
-        if self.DATABASE_URL_OVERRIDE:
-            return self.DATABASE_URL_OVERRIDE
-        return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+    def model_post_init(self, __context) -> None:
+        if not self.DATABASE_URL:
+            self.DATABASE_URL = (
+                f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+
 
 
 settings = Settings()

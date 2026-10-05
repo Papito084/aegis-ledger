@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
@@ -12,13 +12,18 @@ from app.core.exceptions import (
     ConcurrentTransactionConflictError,
 )
 from app.services.outbox_relay import OutboxRelay
+import app.core.metrics  # noqa: F401 - Initialize Prometheus metrics
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: ensure tables are created (in development/tests)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Startup: ensure tables are created (in development/tests/multi-worker)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception:
+        pass
+
 
     # Initialize and start OutboxRelay background worker
     outbox_relay = OutboxRelay()
@@ -103,3 +108,15 @@ async def root():
         "version": settings.VERSION,
         "docs": "/docs",
     }
+
+
+@app.get("/health", tags=["Health"])
+async def health():
+    return {"status": "healthy"}
+
+
+@app.get("/metrics", tags=["Observability"])
+async def metrics():
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+

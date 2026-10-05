@@ -64,7 +64,13 @@ def with_serialization_retry(
                     if not is_serialization_error(exc):
                         raise
                     attempt += 1
+                    try:
+                        from app.core.metrics import LEDGER_SERIALIZATION_RETRIES_TOTAL
+                        LEDGER_SERIALIZATION_RETRIES_TOTAL.inc()
+                    except Exception:
+                        pass
                     if attempt > max_retries:
+
                         logger.error(
                             "Max serialization retries (%d) exceeded for %s: %s",
                             max_retries,
