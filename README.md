@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Nginx-1.25-009639?style=for-the-badge&logo=nginx&logoColor=white" alt="Nginx" />
 </p>
 
-![AegisLedger Dashboard Preview](docs/assets/dashboard_preview.png)
+![AegisLedger Dashboard Preview](docs/assets/aegis_dashboard.png)
 
 ---
 
